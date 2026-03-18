@@ -15,8 +15,14 @@ use anyhow::{Result, anyhow};
 // }
 //
 
-fn make_files_symlinks(paths: Vec<String>, origin_base_dir: &str) -> Result<()> {
-    let home_dir = std::env::home_dir().unwrap();
+fn make_files_symlinks(
+    paths: Vec<String>,
+    origin_base_dir: &str,
+    remove_links: Option<bool>,
+) -> Result<()> {
+    let remove_links = remove_links.unwrap_or(false);
+    let home_dir = "/Users/me/test";
+    // let home_dir = std::env::home_dir().unwrap();
     for path in paths {
         let file_path = path.strip_prefix(origin_base_dir).unwrap();
         let mut link_path = PathBuf::new();
@@ -25,12 +31,18 @@ fn make_files_symlinks(paths: Vec<String>, origin_base_dir: &str) -> Result<()> 
         let dir_path = link_path.parent().unwrap();
         fs::create_dir_all(dir_path)?;
         println!("{} becomes {}", path, link_path.to_str().unwrap());
-        match Fs::symlink(&path, link_path) {
-            Ok(_) => {}
-            Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-                println!("{} already exists in home", path);
+        if remove_links {
+            if link_path.is_symlink() {
+                fs::remove_file(link_path)?;
             }
-            Err(e) => return Err(e.into()),
+        } else {
+            match Fs::symlink(&path, link_path) {
+                Ok(_) => {}
+                Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+                    println!("{} already exists in home", path);
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
     }
 
@@ -53,6 +65,13 @@ fn loop_over_dirc(curr_path: &str, paths: &mut Vec<String>) -> Result<()> {
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
+    let remove_links = {
+        if args.contains(&"-D".to_string()) || args.contains(&"--delete".to_string()) {
+            true
+        } else {
+            false
+        }
+    };
     let directory_path: &Path = {
         if args.len() > 1 {
             Path::new(&args[1])
@@ -71,7 +90,7 @@ fn main() -> Result<()> {
     let mut paths: Vec<String> = vec![];
     loop_over_dirc(directory_path.to_str().unwrap(), &mut paths)?;
 
-    make_files_symlinks(paths, directory_path.to_str().unwrap())?;
+    make_files_symlinks(paths, directory_path.to_str().unwrap(), Some(remove_links))?;
 
     Ok(())
 }
