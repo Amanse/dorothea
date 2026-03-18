@@ -15,6 +15,8 @@ use anyhow::{Result, anyhow};
 // }
 //
 
+const IGNORE_LIST: [&str; 1] = [".gitignore"];
+
 fn make_files_symlinks(
     paths: Vec<String>,
     origin_base_dir: &str,
@@ -53,6 +55,13 @@ fn loop_over_dirc(curr_path: &str, paths: &mut Vec<String>) -> Result<()> {
     for entry in fs::read_dir(curr_path)? {
         let entry = entry?;
         let path = entry.path();
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|name| IGNORE_LIST.contains(&name))
+        {
+            continue;
+        }
         if path.is_file() {
             paths.push(path.to_str().unwrap().to_string());
         } else {
