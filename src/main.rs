@@ -1,10 +1,5 @@
-use std::result::Result::Ok;
-use std::{
-    env, fs,
-    io::ErrorKind,
-    os::unix::fs as Fs,
-    path::{Path, PathBuf},
-};
+use clap::Parser;
+use std::{env, fs, io::ErrorKind, os::unix::fs as Fs, path::PathBuf};
 
 use anyhow::{Result, anyhow};
 
@@ -15,18 +10,26 @@ use anyhow::{Result, anyhow};
 // }
 //
 
-const IGNORE_LIST: [&str; 1] = [".gitignore"];
+const IGNORE_LIST: [&str; 2] = [".gitignore", ".git"];
+
+#[derive(Parser)]
+struct Args {
+    directory: Option<PathBuf>,
+    symlink_directory: Option<PathBuf>,
+    #[arg(short = 'D', long)]
+    delete: bool,
+}
 
 fn make_files_symlinks(
     paths: Vec<String>,
     origin_base_dir: &str,
-    remove_links: Option<bool>,
+    remove_links: bool,
+    home_dir: PathBuf,
 ) -> Result<()> {
-    let remove_links = remove_links.unwrap_or(false);
-    let home_dir = "/Users/me/test";
-    // let home_dir = std::env::home_dir().unwrap();
     for path in paths {
-        let file_path = path.strip_prefix(origin_base_dir).unwrap();
+        let file_path = path
+            .strip_prefix(origin_base_dir)
+            .ok_or_else(|| anyhow!("Failed to get filepath {}", path))?;
         let mut link_path = PathBuf::new();
         link_path.push(&home_dir);
         link_path.push(file_path);
@@ -65,7 +68,7 @@ fn loop_over_dirc(curr_path: &str, paths: &mut Vec<String>) -> Result<()> {
         if path.is_file() {
             paths.push(path.to_str().unwrap().to_string());
         } else {
-            return loop_over_dirc(path.to_str().unwrap(), paths);
+            loop_over_dirc(path.to_str().unwrap(), paths)?;
         }
     }
 
@@ -73,21 +76,14 @@ fn loop_over_dirc(curr_path: &str, paths: &mut Vec<String>) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
-    let remove_links = {
-        if args.contains(&"-D".to_string()) || args.contains(&"--delete".to_string()) {
-            true
-        } else {
-            false
-        }
-    };
-    let directory_path: &Path = {
-        if args.len() > 1 {
-            Path::new(&args[1])
-        } else {
-            &env::current_dir().unwrap()
-        }
-    };
+    let cli = Args::parse();
+    let remove_links = cli.delete;
+    let directory_path: PathBuf = cli.directory.unwrap_or(env::current_dir()?);
+    let symlink_dir: PathBuf = cli
+        .symlink_directory
+        .unwrap_or(dirs::home_dir().ok_or_else(|| {
+            anyhow!("Cannot determine home directory or directory to symlink to")
+        })?);
 
     if !directory_path.exists() {
         return Err(anyhow!("The given path doesn't exist"));
@@ -99,7 +95,12 @@ fn main() -> Result<()> {
     let mut paths: Vec<String> = vec![];
     loop_over_dirc(directory_path.to_str().unwrap(), &mut paths)?;
 
-    make_files_symlinks(paths, directory_path.to_str().unwrap(), Some(remove_links))?;
+    make_files_symlinks(
+        paths,
+        directory_path.to_str().unwrap(),
+        remove_links,
+        symlink_dir,
+    )?;
 
     Ok(())
 }
